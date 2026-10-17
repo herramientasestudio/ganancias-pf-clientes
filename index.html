@@ -161,12 +161,20 @@
 
     <div class="section-title">Otros datos del mes</div>
     <label>F.931 (monto)</label>
+    <label class="fileBtn">Subir PDF o HTML del F.931 (opcional)
+      <input type="file" id="fileF931" accept=".pdf,.html,.htm">
+    </label>
+    <div class="hint" id="f931Hint">Si el PDF no se lee bien, guardá la página como HTML (ver más abajo) — es más confiable.</div>
     <input type="number" id="f931" step="0.01">
     <label>IIBB determinado</label>
     <input type="number" id="iibbDeterminado" step="0.01">
     <label>Autónomos (monto pagado)</label>
     <input type="number" id="autonomosPagado" step="0.01">
     <label>Sindicatos (monto)</label>
+    <label class="fileBtn">Subir PDF(s) o HTML de sindicato (opcional, podés elegir varios)
+      <input type="file" id="fileSindicatos" accept=".pdf,.html,.htm" multiple>
+    </label>
+    <div class="hint" id="sindicatosHint"></div>
     <input type="number" id="sindicatos" step="0.01">
     <label>Otros gastos — monto</label>
     <input type="number" id="otrosGastos" step="0.01">
@@ -317,6 +325,10 @@ function openMonth(anio, mes){
   document.getElementById("fileVentas").value = "";
   document.getElementById("fileCompras").value = "";
   document.getElementById("fileRecibo").value = "";
+  document.getElementById("fileF931").value = "";
+  document.getElementById("fileSindicatos").value = "";
+  document.getElementById("f931Hint").textContent = "Si el PDF no se lee bien, guardá la página como HTML — es más confiable.";
+  document.getElementById("sindicatosHint").textContent = "";
   actualizarResumenMes();
   window.scrollTo({top: document.getElementById("formCard").offsetTop - 10, behavior:"smooth"});
 }
@@ -427,6 +439,22 @@ async function leerPdfTexto(file){
   return texto;
 }
 
+// Lee el texto de una página guardada como HTML (más confiable que el PDF
+// cuando la página original viene como imagen al imprimirla).
+async function leerHtmlTexto(file){
+  const html = await file.text();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return (doc.body ? doc.body.textContent : doc.documentElement.textContent) || "";
+}
+
+function esArchivoHtml(file){
+  return /\.(html?|htm)$/i.test(file.name);
+}
+
+async function leerTextoDeArchivo(file){
+  return esArchivoHtml(file) ? leerHtmlTexto(file) : leerPdfTexto(file);
+}
+
 function extraerNetos(texto){
   const re = /neto\s*(a\s*cobrar|a\s*pagar)?\s*[:\$]?\s*([\d.,]+)/gi;
   let m, total = 0, encontrados = 0;
@@ -436,6 +464,52 @@ function extraerNetos(texto){
     if(!isNaN(val) && val > 1000){ total += val; encontrados++; }
   }
   return {total, encontrados};
+}
+
+// Interpreta un número que puede venir en formato argentino (978.550,14)
+// o en formato con coma de miles (148,134.99), según cuál separador
+// aparezca último en el texto.
+function parseMontoFlexible(str){
+  str = (str || "").trim();
+  const hasComma = str.includes(",");
+  const hasDot = str.includes(".");
+  if(hasComma && hasDot){
+    if(str.lastIndexOf(",") > str.lastIndexOf(".")){
+      str = str.replace(/\./g, "").replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if(hasComma){
+    str = str.replace(",", ".");
+  } else if(hasDot){
+    const partes = str.split(".");
+    if(partes.length > 1 && partes[partes.length-1].length === 3){
+      str = str.replace(/\./g, "");
+    }
+  }
+  const val = parseFloat(str);
+  return isNaN(val) ? null : val;
+}
+
+// F.931: suma los montos de los códigos 301, 351, 302, 352, 312 y 028
+// de la sección "VIII - Montos que se ingresan" (el 351 puede repetirse).
+function extraerF931(texto){
+  const re = /\b(301|351|302|352|312|028)\b\s*-\s*[^\d\n]{0,60}?(-?[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)/g;
+  let m, total = 0, encontrados = 0;
+  while((m = re.exec(texto)) !== null){
+    const val = parseMontoFlexible(m[2]);
+    if(val !== null){ total += val; encontrados++; }
+  }
+  return {total, encontrados};
+}
+
+// Sindicatos: busca "Total a pagar" / "Total aporte..." en boletas de depósito
+// (SEC, Osecac, Faecys). Toma solo la primera coincidencia de cada PDF.
+function extraerTotalSindical(texto){
+  const re = /total\s*(a\s*pagar|aporte[^\d\n]{0,30})\s*:?\s*\$?\s*(-?[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)/i;
+  const m = texto.match(re);
+  if(!m) return null;
+  return parseMontoFlexible(m[2]);
 }
 
 document.getElementById("fileRecibo").addEventListener("change", async (e) => {
@@ -461,6 +535,52 @@ document.getElementById("fileRecibo").addEventListener("change", async (e) => {
   else msg += " Revisá que esté bien.";
   document.getElementById("reciboHint").textContent = msg;
   window._reciboFiles = files;
+  e.target.value = "";
+});
+
+document.getElementById("fileF931").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if(!f){ return; }
+  document.getElementById("f931Hint").textContent = "Leyendo archivo...";
+  try{
+    const texto = await leerTextoDeArchivo(f);
+    const {total, encontrados} = extraerF931(texto);
+    if(encontrados > 0){
+      document.getElementById("f931").value = total.toFixed(2);
+      actualizarResumenMes();
+      document.getElementById("f931Hint").textContent = `Detecté ${encontrados} concepto(s), suma $${total.toFixed(2)}. Revisá que esté bien.`;
+    } else if(!esArchivoHtml(f)) {
+      document.getElementById("f931Hint").textContent = "No pude leer el monto automáticamente (puede que el PDF sea una imagen). Probá guardando la página como HTML, o completalo a mano.";
+    } else {
+      document.getElementById("f931Hint").textContent = "No encontré los montos en ese HTML. Completalo a mano.";
+    }
+  }catch(err){
+    document.getElementById("f931Hint").textContent = "No pude leer el archivo automáticamente. Completalo a mano.";
+  }
+  e.target.value = "";
+});
+
+document.getElementById("fileSindicatos").addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files || []); if(!files.length) return;
+  document.getElementById("sindicatosHint").textContent = "Leyendo PDF(s)...";
+  let totalGeneral = 0, archivosOk = 0, archivosFallidos = 0;
+  for(const f of files){
+    try{
+      const texto = await leerTextoDeArchivo(f);
+      const val = extraerTotalSindical(texto);
+      if(val !== null){ totalGeneral += val; archivosOk++; }
+      else { archivosFallidos++; }
+    }catch(err){
+      archivosFallidos++;
+    }
+  }
+  if(archivosOk > 0){
+    document.getElementById("sindicatos").value = totalGeneral.toFixed(2);
+    actualizarResumenMes();
+  }
+  let msg = `Leí ${archivosOk} de ${files.length} comprobante(s), suma $${totalGeneral.toFixed(2)}.`;
+  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer solos (si eran PDF puede que sean imagen — probá guardarlos como HTML) — revisá y completá a mano si hace falta.`;
+  else msg += " Revisá que esté bien.";
+  document.getElementById("sindicatosHint").textContent = msg;
   e.target.value = "";
 });
 
