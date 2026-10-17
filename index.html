@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js"></script>
 <style>
   :root{
     --navy:#1B2A4A;
@@ -451,8 +452,36 @@ function esArchivoHtml(file){
   return /\.(html?|htm)$/i.test(file.name);
 }
 
-async function leerTextoDeArchivo(file){
-  return esArchivoHtml(file) ? leerHtmlTexto(file) : leerPdfTexto(file);
+// Cuando el PDF no tiene texto real (es una imagen), lo renderiza página
+// por página con pdf.js y le corre OCR (Tesseract) encima. Gratis, corre
+// en el navegador, sin servidor — más lento que el texto real pero no
+// requiere que el cliente convierta nada a mano.
+async function ocrPdfImagen(file, onProgress){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let texto = "";
+  for(let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({scale: 2.5});
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({canvasContext: canvas.getContext("2d"), viewport}).promise;
+    if(onProgress) onProgress(`Leyendo imagen con OCR (página ${p} de ${pdf.numPages})...`);
+    const { data } = await Tesseract.recognize(canvas, "spa");
+    texto += " " + data.text;
+  }
+  return texto;
+}
+
+async function leerTextoDeArchivo(file, onProgress){
+  if(esArchivoHtml(file)) return leerHtmlTexto(file);
+  const texto = await leerPdfTexto(file);
+  // Si el PDF casi no tiene texto real, probablemente es una imagen: OCR.
+  if(texto.replace(/\s/g, "").length < 30){
+    return ocrPdfImagen(file, onProgress);
+  }
+  return texto;
 }
 
 function extraerNetos(texto){
@@ -514,11 +543,12 @@ function extraerTotalSindical(texto){
 
 document.getElementById("fileRecibo").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files || []); if(!files.length) return;
-  document.getElementById("reciboHint").textContent = "Leyendo PDF(s)...";
+  const hint = document.getElementById("reciboHint");
+  hint.textContent = "Leyendo PDF(s)...";
   let totalGeneral = 0, archivosOk = 0, archivosFallidos = 0;
   for(const f of files){
     try{
-      const texto = await leerPdfTexto(f);
+      const texto = await leerTextoDeArchivo(f, (msg) => hint.textContent = `${f.name}: ${msg}`);
       const {total, encontrados} = extraerNetos(texto);
       if(encontrados > 0){ totalGeneral += total; archivosOk++; }
       else { archivosFallidos++; }
@@ -531,41 +561,41 @@ document.getElementById("fileRecibo").addEventListener("change", async (e) => {
     actualizarResumenMes();
   }
   let msg = `Leí ${archivosOk} de ${files.length} recibo(s), suma $${totalGeneral.toFixed(2)}.`;
-  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer solos — revisá y completá a mano si hace falta.`;
+  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer ni con OCR — revisá y completá a mano si hace falta.`;
   else msg += " Revisá que esté bien.";
-  document.getElementById("reciboHint").textContent = msg;
+  hint.textContent = msg;
   window._reciboFiles = files;
   e.target.value = "";
 });
 
 document.getElementById("fileF931").addEventListener("change", async (e) => {
   const f = e.target.files[0]; if(!f){ return; }
-  document.getElementById("f931Hint").textContent = "Leyendo archivo...";
+  const hint = document.getElementById("f931Hint");
+  hint.textContent = "Leyendo archivo...";
   try{
-    const texto = await leerTextoDeArchivo(f);
+    const texto = await leerTextoDeArchivo(f, (msg) => hint.textContent = msg);
     const {total, encontrados} = extraerF931(texto);
     if(encontrados > 0){
       document.getElementById("f931").value = total.toFixed(2);
       actualizarResumenMes();
-      document.getElementById("f931Hint").textContent = `Detecté ${encontrados} concepto(s), suma $${total.toFixed(2)}. Revisá que esté bien.`;
-    } else if(!esArchivoHtml(f)) {
-      document.getElementById("f931Hint").textContent = "No pude leer el monto automáticamente (puede que el PDF sea una imagen). Probá guardando la página como HTML, o completalo a mano.";
+      hint.textContent = `Detecté ${encontrados} concepto(s), suma $${total.toFixed(2)}. Revisá que esté bien.`;
     } else {
-      document.getElementById("f931Hint").textContent = "No encontré los montos en ese HTML. Completalo a mano.";
+      hint.textContent = "No pude leer el monto automáticamente ni con OCR. Completalo a mano.";
     }
   }catch(err){
-    document.getElementById("f931Hint").textContent = "No pude leer el archivo automáticamente. Completalo a mano.";
+    hint.textContent = "No pude leer el archivo automáticamente. Completalo a mano.";
   }
   e.target.value = "";
 });
 
 document.getElementById("fileSindicatos").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files || []); if(!files.length) return;
-  document.getElementById("sindicatosHint").textContent = "Leyendo PDF(s)...";
+  const hint = document.getElementById("sindicatosHint");
+  hint.textContent = "Leyendo archivo(s)...";
   let totalGeneral = 0, archivosOk = 0, archivosFallidos = 0;
   for(const f of files){
     try{
-      const texto = await leerTextoDeArchivo(f);
+      const texto = await leerTextoDeArchivo(f, (msg) => hint.textContent = `${f.name}: ${msg}`);
       const val = extraerTotalSindical(texto);
       if(val !== null){ totalGeneral += val; archivosOk++; }
       else { archivosFallidos++; }
@@ -578,9 +608,9 @@ document.getElementById("fileSindicatos").addEventListener("change", async (e) =
     actualizarResumenMes();
   }
   let msg = `Leí ${archivosOk} de ${files.length} comprobante(s), suma $${totalGeneral.toFixed(2)}.`;
-  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer solos (si eran PDF puede que sean imagen — probá guardarlos como HTML) — revisá y completá a mano si hace falta.`;
+  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer ni con OCR — revisá y completá a mano si hace falta.`;
   else msg += " Revisá que esté bien.";
-  document.getElementById("sindicatosHint").textContent = msg;
+  hint.textContent = msg;
   e.target.value = "";
 });
 
