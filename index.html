@@ -168,6 +168,10 @@
     <div class="hint" id="f931Hint">Si el PDF no se lee bien, guardá la página como HTML (ver más abajo) — es más confiable.</div>
     <input type="number" id="f931" step="0.01">
     <label>IIBB determinado</label>
+    <label class="fileBtn">Subir PDF o HTML de IIBB — local o Convenio Multilateral (opcional)
+      <input type="file" id="fileIIBB" accept=".pdf,.html,.htm">
+    </label>
+    <div class="hint" id="iibbHint"></div>
     <input type="number" id="iibbDeterminado" step="0.01">
     <label>Autónomos (monto pagado)</label>
     <input type="number" id="autonomosPagado" step="0.01">
@@ -328,8 +332,10 @@ function openMonth(anio, mes){
   document.getElementById("fileRecibo").value = "";
   document.getElementById("fileF931").value = "";
   document.getElementById("fileSindicatos").value = "";
+  document.getElementById("fileIIBB").value = "";
   document.getElementById("f931Hint").textContent = "Si el PDF no se lee bien, guardá la página como HTML — es más confiable.";
   document.getElementById("sindicatosHint").textContent = "";
+  document.getElementById("iibbHint").textContent = "";
   actualizarResumenMes();
   window.scrollTo({top: document.getElementById("formCard").offsetTop - 10, behavior:"smooth"});
 }
@@ -555,6 +561,48 @@ function extraerTotalSindical(texto){
   }
   return null;
 }
+
+// IIBB: toma el "Impuesto Determinado" total — ya sea del formulario local
+// (RUBRO I, fila "Totales": el 2° monto, antes de la palabra "Totales")
+// o del formulario de Convenio Multilateral CM03 (fila "TOTALES" de la
+// tabla de jurisdicciones: el 1er monto, columna "Anticipo Impuesto
+// Determinado", justo después de la palabra "TOTALES", sin importar
+// cuántas jurisdicciones tenga el cuadro).
+function extraerIIBB(texto){
+  const patronCM = new RegExp("\\bTOTALES\\b\\s*\\$?\\s*" + NUM_RE_SRC, "i");
+  const mCM = texto.match(patronCM);
+  if(mCM){
+    const val = parseMontoFlexible(mCM[1]);
+    if(val !== null) return val;
+  }
+  const patronLocal = new RegExp("\\$\\s*[\\d.,]+\\s+\\$\\s*" + NUM_RE_SRC + "\\s+Totales", "i");
+  const mLocal = texto.match(patronLocal);
+  if(mLocal){
+    const val = parseMontoFlexible(mLocal[1]);
+    if(val !== null) return val;
+  }
+  return null;
+}
+
+document.getElementById("fileIIBB").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if(!f){ return; }
+  const hint = document.getElementById("iibbHint");
+  hint.textContent = "Leyendo archivo...";
+  try{
+    const texto = await leerTextoDeArchivo(f, (msg) => hint.textContent = msg);
+    const val = extraerIIBB(texto);
+    if(val !== null){
+      document.getElementById("iibbDeterminado").value = val.toFixed(2);
+      actualizarResumenMes();
+      hint.textContent = `Detecté $${val.toFixed(2)}. Revisá que esté bien.`;
+    } else {
+      hint.textContent = "No pude leer el monto automáticamente ni con OCR. Completalo a mano.";
+    }
+  }catch(err){
+    hint.textContent = "No pude leer el archivo automáticamente. Completalo a mano.";
+  }
+  e.target.value = "";
+});
 
 document.getElementById("fileRecibo").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files || []); if(!files.length) return;
