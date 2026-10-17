@@ -520,10 +520,14 @@ function parseMontoFlexible(str){
   return isNaN(val) ? null : val;
 }
 
+// Número flexible: dígitos con puntos y/o comas en cualquier combinación
+// (con o sin separador de miles). parseMontoFlexible interpreta el formato.
+const NUM_RE_SRC = "(-?[\\d][\\d.,]*)";
+
 // F.931: suma los montos de los códigos 301, 351, 302, 352, 312 y 028
 // de la sección "VIII - Montos que se ingresan" (el 351 puede repetirse).
 function extraerF931(texto){
-  const re = /\b(301|351|302|352|312|028)\b\s*-\s*[^\d\n]{0,60}?(-?[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)/g;
+  const re = new RegExp("\\b(301|351|302|352|312|028)\\b\\s*-\\s*[^\\d\\n]{0,60}?" + NUM_RE_SRC, "g");
   let m, total = 0, encontrados = 0;
   while((m = re.exec(texto)) !== null){
     const val = parseMontoFlexible(m[2]);
@@ -532,13 +536,24 @@ function extraerF931(texto){
   return {total, encontrados};
 }
 
-// Sindicatos: busca "Total a pagar" / "Total aporte..." en boletas de depósito
-// (SEC, Osecac, Faecys). Toma solo la primera coincidencia de cada PDF.
+// Sindicatos: busca el total en boletas de depósito de distintos formatos
+// (SEC/Osecac: "Total a pagar"; Faecys: "Total aporte del 0.5%";
+// Inacap: "Monto Total"). Prueba cada patrón en orden y usa el primero
+// que encuentre, tomando solo la primera coincidencia del PDF.
 function extraerTotalSindical(texto){
-  const re = /total\s*(a\s*pagar|aporte[^\d\n]{0,30})\s*:?\s*\$?\s*(-?[\d]{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)/i;
-  const m = texto.match(re);
-  if(!m) return null;
-  return parseMontoFlexible(m[2]);
+  const patrones = [
+    new RegExp("total\\s*a\\s*pagar\\s*:?\\s*\\$?\\s*" + NUM_RE_SRC, "i"),
+    new RegExp("total\\s*aporte[^\\n$]{0,40}\\$?\\s*" + NUM_RE_SRC, "i"),
+    new RegExp("monto\\s*total\\s*:?\\s*\\$?\\s*" + NUM_RE_SRC, "i"),
+  ];
+  for(const re of patrones){
+    const m = texto.match(re);
+    if(m){
+      const val = parseMontoFlexible(m[1]);
+      if(val !== null) return val;
+    }
+  }
+  return null;
 }
 
 document.getElementById("fileRecibo").addEventListener("change", async (e) => {
