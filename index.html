@@ -73,6 +73,18 @@
   .section-title{font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 4px}
   #loginGate{max-width:420px; margin:60px auto; text-align:center; padding:0 20px}
   #loginGate .card{text-align:left}
+  .tabs{display:flex; gap:6px; margin-bottom:14px}
+  .tabBtn{
+    flex:1; text-align:center; padding:10px 4px; border-radius:8px; border:1px solid var(--border);
+    background:#fff; font-size:.82rem; font-weight:600; cursor:pointer; color:var(--muted);
+  }
+  .tabBtn.active{background:var(--navy); color:#fff; border-color:var(--navy)}
+  table.acumTable{width:100%; border-collapse:collapse; font-size:.82rem}
+  table.acumTable th{text-align:right; color:var(--muted); font-weight:600; padding:6px 4px; border-bottom:1px solid var(--border)}
+  table.acumTable th:first-child, table.acumTable td:first-child{text-align:left}
+  table.acumTable td{text-align:right; padding:6px 4px; border-bottom:1px dashed var(--border)}
+  table.acumTable tr.sinCargar td{color:var(--muted)}
+  table.acumTable tr.total td{font-weight:700; border-top:2px solid var(--navy); border-bottom:none}
 </style>
 </head>
 <body>
@@ -90,11 +102,22 @@
 
 <main id="app" style="display:none">
 
+  <div class="tabs">
+    <div class="tabBtn active" id="tabBtnMeses">Meses</div>
+    <div class="tabBtn" id="tabBtnAcumulado">Acumulado</div>
+    <div class="tabBtn" id="tabBtnCalculo">Cálculo anual</div>
+  </div>
+
   <div class="card">
-    <h2>Mes a cargar</h2>
     <label>Año</label>
     <select id="anioSel"></select>
-    <div class="monthGrid" id="monthGrid" style="margin-top:12px"></div>
+  </div>
+
+  <div id="panelMeses">
+
+  <div class="card">
+    <h2>Mes a cargar</h2>
+    <div class="monthGrid" id="monthGrid"></div>
   </div>
 
   <div class="card" id="formCard" style="display:none">
@@ -155,10 +178,22 @@
     <div class="status" id="formStatus"></div>
   </div>
 
-  <div class="card">
-    <h2>Resultado estimado del año</h2>
-    <div id="resultado"></div>
-    <div class="hint" style="margin-top:10px">Estimación simplificada a partir de los datos cargados. No reemplaza la liquidación final del estudio.</div>
+  </div>
+
+  <div id="panelAcumulado" style="display:none">
+    <div class="card">
+      <h2>Acumulado mensual</h2>
+      <div class="hint" style="margin-bottom:10px">Ingresos menos todos los gastos del mes (sin cálculo de impuesto). El impuesto de Ganancias se calcula en la solapa "Cálculo anual".</div>
+      <div id="acumuladoBody"></div>
+    </div>
+  </div>
+
+  <div id="panelCalculo" style="display:none">
+    <div class="card">
+      <h2>Cálculo anual de Ganancias</h2>
+      <div id="resultado"></div>
+      <div class="hint" style="margin-top:10px">Estimación simplificada a partir de los datos cargados. No reemplaza la liquidación final del estudio.</div>
+    </div>
   </div>
 
 </main>
@@ -182,6 +217,22 @@ let cargados = {}; // key "anio-mes" -> row
 let activeMonth = null;
 let deducciones = {};
 let escala = [];
+
+// ---------- Solapas ----------
+const TABS = {
+  meses: {btn:"tabBtnMeses", panel:"panelMeses"},
+  acumulado: {btn:"tabBtnAcumulado", panel:"panelAcumulado"},
+  calculo: {btn:"tabBtnCalculo", panel:"panelCalculo"}
+};
+function showTab(nombre){
+  Object.entries(TABS).forEach(([key, {btn, panel}]) => {
+    document.getElementById(btn).classList.toggle("active", key === nombre);
+    document.getElementById(panel).style.display = (key === nombre) ? "block" : "none";
+  });
+}
+document.getElementById("tabBtnMeses").addEventListener("click", () => showTab("meses"));
+document.getElementById("tabBtnAcumulado").addEventListener("click", () => showTab("acumulado"));
+document.getElementById("tabBtnCalculo").addEventListener("click", () => showTab("calculo"));
 
 async function init(){
   if(!TOKEN){ showGate(); return; }
@@ -223,6 +274,7 @@ async function loadAnio(){
   (data||[]).forEach(r => cargados[`${r.anio}-${r.mes}`] = r);
   renderMonthGrid(anio);
   renderResultado(anio);
+  renderAcumulado(anio);
   document.getElementById("formCard").style.display = "none";
 }
 
@@ -444,6 +496,44 @@ document.getElementById("btnBorrar").addEventListener("click", async () => {
   document.getElementById("formCard").style.display = "none";
   activeMonth = null;
 });
+
+// ---------- Acumulado mensual (ingresos - todos los gastos, sin impuesto) ----------
+function netoDelMes(r){
+  const ingresos = Number(r.ventas_gravadas||0) + Number(r.ventas_no_gravadas||0);
+  const gastos = Number(r.compras_gravadas||0) + Number(r.compras_no_gravadas||0)
+    + Number(r.sueldo_neto||0) + Number(r.f931||0) + Number(r.iibb_determinado||0)
+    + Number(r.autonomos_pagado||0) + Number(r.sindicatos||0) + Number(r.otros_gastos||0);
+  return {ingresos, gastos, neto: ingresos - gastos};
+}
+
+function renderAcumulado(anio){
+  const fmt = (n) => "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  const body = document.getElementById("acumuladoBody");
+  let filas = "";
+  let acumulado = 0;
+  let hayAlguno = false;
+  for(let m = 1; m <= 12; m++){
+    const row = cargados[`${anio}-${m}`];
+    if(!row){
+      filas += `<tr class="sinCargar"><td>${MESES_NOMBRE[m-1]}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+      continue;
+    }
+    hayAlguno = true;
+    const {ingresos, gastos, neto} = netoDelMes(row);
+    acumulado += neto;
+    filas += `<tr><td>${MESES_NOMBRE[m-1]}</td><td>${fmt(ingresos)}</td><td>${fmt(gastos)}</td><td>${fmt(neto)}</td><td>${fmt(acumulado)}</td></tr>`;
+  }
+  if(!hayAlguno){
+    body.innerHTML = `<div class="hint">Todavía no hay meses cargados en ${anio}.</div>`;
+    return;
+  }
+  body.innerHTML = `
+    <table class="acumTable">
+      <thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Resultado mes</th><th>Acumulado</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+  `;
+}
 
 // ---------- Cálculo estimado ----------
 function calcularImpuesto(monto, anio){
