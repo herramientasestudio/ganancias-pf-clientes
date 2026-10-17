@@ -173,6 +173,9 @@
     <label>Otros gastos — detalle</label>
     <input type="text" id="otrosDetalle" placeholder="Descripción opcional">
 
+    <div class="section-title">Resultado del mes</div>
+    <div id="mesResumen"></div>
+
     <button class="primary" id="btnGuardar" style="margin-top:16px">Guardar mes</button>
     <button class="secondary" id="btnBorrar">Borrar datos de este mes</button>
     <div class="status" id="formStatus"></div>
@@ -314,8 +317,31 @@ function openMonth(anio, mes){
   document.getElementById("fileVentas").value = "";
   document.getElementById("fileCompras").value = "";
   document.getElementById("fileRecibo").value = "";
+  actualizarResumenMes();
   window.scrollTo({top: document.getElementById("formCard").offsetTop - 10, behavior:"smooth"});
 }
+
+// ---------- Resumen en vivo del mes (ingresos - gastos, sin impuesto) ----------
+const CAMPOS_RESUMEN_MES = [
+  "ventasGravadas","ventasNoGravadas","comprasGravadas","comprasNoGravadas",
+  "sueldoNeto","f931","iibbDeterminado","autonomosPagado","sindicatos","otrosGastos"
+];
+function actualizarResumenMes(){
+  const val = (id) => Number(document.getElementById(id).value) || 0;
+  const ingresos = val("ventasGravadas") + val("ventasNoGravadas");
+  const gastos = val("comprasGravadas") + val("comprasNoGravadas") + val("sueldoNeto")
+    + val("f931") + val("iibbDeterminado") + val("autonomosPagado") + val("sindicatos") + val("otrosGastos");
+  const resultado = ingresos - gastos;
+  const fmt = (n) => "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById("mesResumen").innerHTML = `
+    <div class="result-line"><span>Total ingresos</span><span>${fmt(ingresos)}</span></div>
+    <div class="result-line"><span>Total gastos</span><span>-${fmt(gastos)}</span></div>
+    <div class="result-line total"><span>Resultado del mes</span><span>${fmt(resultado)}</span></div>
+  `;
+}
+CAMPOS_RESUMEN_MES.forEach(id => {
+  document.getElementById(id).addEventListener("input", actualizarResumenMes);
+});
 
 // ---------- Lectura de Excel "Mis Comprobantes" ----------
 function sumColumnas(rows){
@@ -372,16 +398,16 @@ function leerExcel(file, cbGravado, cbNoGravado){
 document.getElementById("fileVentas").addEventListener("change", (e) => {
   const f = e.target.files[0]; if(!f){ return; }
   leerExcel(f,
-    v => document.getElementById("ventasGravadas").value = v.toFixed(2),
-    v => document.getElementById("ventasNoGravadas").value = v.toFixed(2)
+    v => { document.getElementById("ventasGravadas").value = v.toFixed(2); actualizarResumenMes(); },
+    v => { document.getElementById("ventasNoGravadas").value = v.toFixed(2); actualizarResumenMes(); }
   );
   e.target.value = "";
 });
 document.getElementById("fileCompras").addEventListener("change", (e) => {
   const f = e.target.files[0]; if(!f){ return; }
   leerExcel(f,
-    v => document.getElementById("comprasGravadas").value = v.toFixed(2),
-    v => document.getElementById("comprasNoGravadas").value = v.toFixed(2)
+    v => { document.getElementById("comprasGravadas").value = v.toFixed(2); actualizarResumenMes(); },
+    v => { document.getElementById("comprasNoGravadas").value = v.toFixed(2); actualizarResumenMes(); }
   );
   e.target.value = "";
 });
@@ -428,6 +454,7 @@ document.getElementById("fileRecibo").addEventListener("change", async (e) => {
   }
   if(archivosOk > 0){
     document.getElementById("sueldoNeto").value = totalGeneral.toFixed(2);
+    actualizarResumenMes();
   }
   let msg = `Leí ${archivosOk} de ${files.length} recibo(s), suma $${totalGeneral.toFixed(2)}.`;
   if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer solos — revisá y completá a mano si hace falta.`;
