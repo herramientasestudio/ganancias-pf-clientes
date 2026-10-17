@@ -266,7 +266,7 @@ function openMonth(anio, mes){
 }
 
 // ---------- Lectura de Excel "Mis Comprobantes" ----------
-function sumColumnas(rows, matchGravado, matchNoGravado){
+function sumColumnas(rows){
   if(!rows.length) return {gravado:0, noGravado:0};
   const headers = Object.keys(rows[0]).map(h => h.toLowerCase());
   const origKeys = Object.keys(rows[0]);
@@ -274,12 +274,28 @@ function sumColumnas(rows, matchGravado, matchNoGravado){
     const idx = headers.findIndex(pred);
     return idx >= 0 ? origKeys[idx] : null;
   };
+  const kTipo = findKey(h => h.trim() === "tipo");
   const kGrav = findKey(h => h.includes("gravado total"));
   const kNoGrav = findKey(h => h.includes("no gravado") || h.includes("exenta"));
+  const kTotal = findKey(h => h.includes("imp. total") || h.includes("imp total"));
   let gravado = 0, noGravado = 0;
   rows.forEach(r => {
-    if(kGrav && !isNaN(parseFloat(r[kGrav]))) gravado += parseFloat(r[kGrav]);
-    if(kNoGrav && !isNaN(parseFloat(r[kNoGrav]))) noGravado += parseFloat(r[kNoGrav]);
+    const tipo = kTipo ? String(r[kTipo] || "").toLowerCase() : "";
+    const esNotaCredito = tipo.includes("nota de cr");
+    const signo = esNotaCredito ? -1 : 1;
+    const letra = (tipo.match(/\b([abc])\s*$/i) || [])[1];
+    const esFacturaC = (letra || "").toLowerCase() === "c";
+
+    if(kTipo && esFacturaC){
+      // Facturas/NC "C" (monotributo) no discriminan IVA: se usa el total y va a "no gravado"
+      const vTotal = kTotal ? parseFloat(r[kTotal]) : NaN;
+      if(!isNaN(vTotal)) noGravado += signo * vTotal;
+    } else {
+      const vGrav = kGrav ? parseFloat(r[kGrav]) : NaN;
+      const vNoGrav = kNoGrav ? parseFloat(r[kNoGrav]) : NaN;
+      if(!isNaN(vGrav)) gravado += signo * vGrav;
+      if(!isNaN(vNoGrav)) noGravado += signo * vNoGrav;
+    }
   });
   return {gravado, noGravado};
 }
