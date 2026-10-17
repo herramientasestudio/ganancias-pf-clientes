@@ -1,1 +1,476 @@
-<h1>Estudio Kern</h1>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estudio Kern — Ganancias</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --navy:#1B2A4A;
+    --gold:#C9A227;
+    --bg:#F0F3F8;
+    --card:#FFFFFF;
+    --text:#1B2A4A;
+    --muted:#6b7686;
+    --border:#dbe1ea;
+    --danger:#b3402a;
+    --ok:#2d7a4f;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    padding-bottom:60px;
+  }
+  header{
+    background:var(--navy); color:#fff; padding:18px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  header .brand{font-weight:700; font-size:1.15rem; letter-spacing:.3px}
+  header .brand small{display:block; font-weight:400; font-size:.75rem; color:#cfd6e6}
+  main{max-width:720px; margin:0 auto; padding:16px}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px; margin-bottom:16px;
+  }
+  h2{font-size:1.05rem; margin:0 0 12px; color:var(--navy)}
+  label{display:block; font-size:.82rem; color:var(--muted); margin:10px 0 4px}
+  input[type=number], input[type=text], select{
+    width:100%; padding:10px; border:1px solid var(--border); border-radius:8px;
+    font-size:1rem; background:#fff; color:var(--text);
+  }
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .fileBtn{
+    display:inline-block; padding:9px 12px; border:1px solid var(--gold);
+    color:var(--navy); border-radius:8px; font-size:.85rem; cursor:pointer;
+    background:#fdf8ec; margin-top:4px;
+  }
+  .fileBtn input{display:none}
+  .hint{font-size:.75rem; color:var(--muted); margin-top:4px}
+  button.primary{
+    background:var(--navy); color:#fff; border:none; padding:12px 18px;
+    border-radius:8px; font-size:.95rem; font-weight:600; cursor:pointer; width:100%;
+  }
+  button.secondary{
+    background:transparent; color:var(--danger); border:1px solid var(--danger);
+    padding:10px 16px; border-radius:8px; font-size:.85rem; cursor:pointer; margin-top:8px; width:100%;
+  }
+  .status{font-size:.85rem; margin-top:10px; min-height:1.2em}
+  .status.ok{color:var(--ok)}
+  .status.err{color:var(--danger)}
+  .monthGrid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px}
+  .monthBtn{
+    padding:10px 4px; text-align:center; border-radius:8px; border:1px solid var(--border);
+    background:#fff; font-size:.8rem; cursor:pointer; color:var(--muted);
+  }
+  .monthBtn.loaded{border-color:var(--gold); background:#fdf8ec; color:var(--navy); font-weight:600}
+  .monthBtn.active{border-color:var(--navy); background:var(--navy); color:#fff}
+  .result-line{display:flex; justify-content:space-between; padding:6px 0; font-size:.9rem; border-bottom:1px dashed var(--border)}
+  .result-line.total{font-weight:700; font-size:1.05rem; border-bottom:none; border-top:2px solid var(--navy); padding-top:10px; margin-top:4px}
+  .section-title{font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 4px}
+  #loginGate{max-width:420px; margin:60px auto; text-align:center; padding:0 20px}
+  #loginGate .card{text-align:left}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">Estudio Kern<small id="clienteNombre">Ganancias</small></div>
+</header>
+
+<div id="loginGate" style="display:none">
+  <div class="card">
+    <h2>No pudimos abrir tu información</h2>
+    <p style="font-size:.9rem; color:var(--muted)">El link no es válido o venció. Pedile a tu contador/a el link actualizado.</p>
+  </div>
+</div>
+
+<main id="app" style="display:none">
+
+  <div class="card">
+    <h2>Mes a cargar</h2>
+    <label>Año</label>
+    <select id="anioSel"></select>
+    <div class="monthGrid" id="monthGrid" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card" id="formCard" style="display:none">
+    <h2 id="formTitle">Mes</h2>
+
+    <div class="section-title">Ventas y compras (Excel "Mis Comprobantes" de ARCA)</div>
+    <label class="fileBtn">Subir Excel de ventas (emitidos)
+      <input type="file" id="fileVentas" accept=".xlsx,.xls,.csv">
+    </label>
+    <label class="fileBtn">Subir Excel de compras (recibidos)
+      <input type="file" id="fileCompras" accept=".xlsx,.xls,.csv">
+    </label>
+    <div class="row2" style="margin-top:10px">
+      <div>
+        <label>Ventas gravadas</label>
+        <input type="number" id="ventasGravadas" step="0.01">
+      </div>
+      <div>
+        <label>Ventas no gravadas</label>
+        <input type="number" id="ventasNoGravadas" step="0.01">
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <label>Compras gravadas</label>
+        <input type="number" id="comprasGravadas" step="0.01">
+      </div>
+      <div>
+        <label>Compras no gravadas</label>
+        <input type="number" id="comprasNoGravadas" step="0.01">
+      </div>
+    </div>
+
+    <div class="section-title">Recibo de sueldo</div>
+    <label class="fileBtn">Subir PDF del recibo
+      <input type="file" id="fileRecibo" accept=".pdf">
+    </label>
+    <div class="hint" id="reciboHint"></div>
+    <label>Sueldo neto (revisá o completá)</label>
+    <input type="number" id="sueldoNeto" step="0.01">
+
+    <div class="section-title">Otros datos del mes</div>
+    <label>F.931 (monto)</label>
+    <input type="number" id="f931" step="0.01">
+    <label>IIBB determinado</label>
+    <input type="number" id="iibbDeterminado" step="0.01">
+    <label>Autónomos (monto pagado)</label>
+    <input type="number" id="autonomosPagado" step="0.01">
+    <label>Otros gastos — monto</label>
+    <input type="number" id="otrosGastos" step="0.01">
+    <label>Otros gastos — detalle</label>
+    <input type="text" id="otrosDetalle" placeholder="Descripción opcional">
+
+    <button class="primary" id="btnGuardar" style="margin-top:16px">Guardar mes</button>
+    <button class="secondary" id="btnBorrar">Borrar datos de este mes</button>
+    <div class="status" id="formStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>Resultado estimado del año</h2>
+    <div id="resultado"></div>
+    <div class="hint" style="margin-top:10px">Estimación simplificada a partir de los datos cargados. No reemplaza la liquidación final del estudio.</div>
+  </div>
+
+</main>
+
+<script>
+const SUPABASE_URL = "https://jzjthobcmbwszoagcaap.supabase.co";
+const SUPABASE_KEY = "sb_publishable_h8JzOOZqlJzyfyLuDuBEuw_wcD-xjs0";
+
+function getToken(){
+  const m = location.hash.match(/c=([0-9a-fA-F-]{36})/);
+  return m ? m[1] : null;
+}
+const TOKEN = getToken();
+
+const sb = TOKEN ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  global: { headers: { "x-client-token": TOKEN } }
+}) : null;
+
+const MESES_NOMBRE = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+let cargados = {}; // key "anio-mes" -> row
+let activeMonth = null;
+let deducciones = {};
+let escala = [];
+
+async function init(){
+  if(!TOKEN){ showGate(); return; }
+  const { data: cliente, error } = await sb.from("clientes").select("*").eq("token", TOKEN).maybeSingle();
+  if(error || !cliente || !cliente.activo){ showGate(); return; }
+
+  document.getElementById("clienteNombre").textContent = cliente.nombre;
+  document.getElementById("app").style.display = "block";
+
+  const anioActual = new Date().getFullYear();
+  const anioSel = document.getElementById("anioSel");
+  for(let a = anioActual; a >= anioActual - 3; a--){
+    const opt = document.createElement("option");
+    opt.value = a; opt.textContent = a;
+    anioSel.appendChild(opt);
+  }
+  anioSel.value = anioActual;
+  anioSel.addEventListener("change", loadAnio);
+
+  const [{data: ded}, {data: esc}] = await Promise.all([
+    sb.from("gan_deducciones").select("*"),
+    sb.from("gan_escala").select("*").order("orden")
+  ]);
+  (ded||[]).forEach(d => deducciones[d.anio] = deducciones[d.anio] || {} , deducciones[anioActual] = {});
+  (ded||[]).forEach(d => { deducciones[d.anio] = deducciones[d.anio] || {}; deducciones[d.anio][d.concepto] = Number(d.monto_anual); });
+  escala = esc || [];
+
+  await loadAnio();
+}
+
+function showGate(){
+  document.getElementById("loginGate").style.display = "block";
+}
+
+async function loadAnio(){
+  const anio = Number(document.getElementById("anioSel").value);
+  const { data } = await sb.from("meses").select("*").eq("anio", anio);
+  cargados = {};
+  (data||[]).forEach(r => cargados[`${r.anio}-${r.mes}`] = r);
+  renderMonthGrid(anio);
+  renderResultado(anio);
+  document.getElementById("formCard").style.display = "none";
+}
+
+function renderMonthGrid(anio){
+  const grid = document.getElementById("monthGrid");
+  grid.innerHTML = "";
+  for(let m = 1; m <= 12; m++){
+    const btn = document.createElement("div");
+    const key = `${anio}-${m}`;
+    btn.className = "monthBtn" + (cargados[key] ? " loaded" : "") + (activeMonth === key ? " active" : "");
+    btn.textContent = MESES_NOMBRE[m-1];
+    btn.onclick = () => openMonth(anio, m);
+    grid.appendChild(btn);
+  }
+}
+
+function openMonth(anio, mes){
+  activeMonth = `${anio}-${mes}`;
+  renderMonthGrid(anio);
+  const row = cargados[activeMonth] || {};
+  document.getElementById("formCard").style.display = "block";
+  document.getElementById("formTitle").textContent = `${MESES_NOMBRE[mes-1]} ${anio}`;
+  document.getElementById("ventasGravadas").value = row.ventas_gravadas || 0;
+  document.getElementById("ventasNoGravadas").value = row.ventas_no_gravadas || 0;
+  document.getElementById("comprasGravadas").value = row.compras_gravadas || 0;
+  document.getElementById("comprasNoGravadas").value = row.compras_no_gravadas || 0;
+  document.getElementById("sueldoNeto").value = row.sueldo_neto || 0;
+  document.getElementById("f931").value = row.f931 || 0;
+  document.getElementById("iibbDeterminado").value = row.iibb_determinado || 0;
+  document.getElementById("autonomosPagado").value = row.autonomos_pagado || 0;
+  document.getElementById("otrosGastos").value = row.otros_gastos || 0;
+  document.getElementById("otrosDetalle").value = row.otros_gastos_detalle || "";
+  document.getElementById("reciboHint").textContent = row.recibo_nombre_archivo ? `Archivo guardado: ${row.recibo_nombre_archivo}` : "";
+  document.getElementById("formStatus").textContent = "";
+  document.getElementById("formStatus").className = "status";
+  document.getElementById("fileVentas").value = "";
+  document.getElementById("fileCompras").value = "";
+  document.getElementById("fileRecibo").value = "";
+  window.scrollTo({top: document.getElementById("formCard").offsetTop - 10, behavior:"smooth"});
+}
+
+// ---------- Lectura de Excel "Mis Comprobantes" ----------
+function sumColumnas(rows, matchGravado, matchNoGravado){
+  if(!rows.length) return {gravado:0, noGravado:0};
+  const headers = Object.keys(rows[0]).map(h => h.toLowerCase());
+  const origKeys = Object.keys(rows[0]);
+  const findKey = (pred) => {
+    const idx = headers.findIndex(pred);
+    return idx >= 0 ? origKeys[idx] : null;
+  };
+  const kGrav = findKey(h => h.includes("neto grav"));
+  const kNoGrav = findKey(h => h.includes("no grav") || h.includes("exento"));
+  let gravado = 0, noGravado = 0;
+  rows.forEach(r => {
+    if(kGrav && !isNaN(parseFloat(r[kGrav]))) gravado += parseFloat(r[kGrav]);
+    if(kNoGrav && !isNaN(parseFloat(r[kNoGrav]))) noGravado += parseFloat(r[kNoGrav]);
+  });
+  return {gravado, noGravado};
+}
+
+function leerExcel(file, cbGravado, cbNoGravado){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try{
+      const wb = XLSX.read(e.target.result, {type:"binary"});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:0});
+      const {gravado, noGravado} = sumColumnas(rows);
+      cbGravado(gravado);
+      cbNoGravado(noGravado);
+    }catch(err){
+      alert("No pude leer ese Excel automáticamente. Cargá los montos a mano.");
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+document.getElementById("fileVentas").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  leerExcel(f,
+    v => document.getElementById("ventasGravadas").value = v.toFixed(2),
+    v => document.getElementById("ventasNoGravadas").value = v.toFixed(2)
+  );
+});
+document.getElementById("fileCompras").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  leerExcel(f,
+    v => document.getElementById("comprasGravadas").value = v.toFixed(2),
+    v => document.getElementById("comprasNoGravadas").value = v.toFixed(2)
+  );
+});
+
+// ---------- Lectura de PDF del recibo de sueldo ----------
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+async function leerPdfTexto(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let texto = "";
+  for(let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    texto += " " + content.items.map(it => it.str).join(" ");
+  }
+  return texto;
+}
+
+function extraerNetos(texto){
+  const re = /neto\s*(a\s*cobrar|a\s*pagar)?\s*[:\$]?\s*([\d.,]+)/gi;
+  let m, total = 0, encontrados = 0;
+  while((m = re.exec(texto)) !== null){
+    let num = m[2].replace(/\./g,"").replace(",",".");
+    const val = parseFloat(num);
+    if(!isNaN(val) && val > 1000){ total += val; encontrados++; }
+  }
+  return {total, encontrados};
+}
+
+document.getElementById("fileRecibo").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  document.getElementById("reciboHint").textContent = "Leyendo PDF...";
+  try{
+    const texto = await leerPdfTexto(f);
+    const {total, encontrados} = extraerNetos(texto);
+    if(encontrados > 0){
+      document.getElementById("sueldoNeto").value = total.toFixed(2);
+      document.getElementById("reciboHint").textContent = `Detecté ${encontrados} recibo(s), suma $${total.toFixed(2)}. Revisá que esté bien.`;
+    } else {
+      document.getElementById("reciboHint").textContent = "No pude leer el monto automáticamente. Completalo a mano.";
+    }
+  }catch(err){
+    document.getElementById("reciboHint").textContent = "No pude leer el PDF automáticamente. Completalo a mano.";
+  }
+  window._reciboFile = f;
+});
+
+// ---------- Guardar / Borrar ----------
+document.getElementById("btnGuardar").addEventListener("click", async () => {
+  if(!activeMonth) return;
+  const [anio, mes] = activeMonth.split("-").map(Number);
+  const status = document.getElementById("formStatus");
+  status.textContent = "Guardando...";
+  status.className = "status";
+
+  let recibo_nombre_archivo = (cargados[activeMonth] && cargados[activeMonth].recibo_nombre_archivo) || "";
+
+  if(window._reciboFile){
+    const path = `${TOKEN}/${anio}-${String(mes).padStart(2,"0")}-${Date.now()}.pdf`;
+    const { error: upErr } = await sb.storage.from("recibos").upload(path, window._reciboFile, {upsert:true});
+    if(!upErr) recibo_nombre_archivo = window._reciboFile.name;
+  }
+
+  const payload = {
+    token: TOKEN, anio, mes,
+    ventas_gravadas: Number(document.getElementById("ventasGravadas").value)||0,
+    ventas_no_gravadas: Number(document.getElementById("ventasNoGravadas").value)||0,
+    compras_gravadas: Number(document.getElementById("comprasGravadas").value)||0,
+    compras_no_gravadas: Number(document.getElementById("comprasNoGravadas").value)||0,
+    sueldo_neto: Number(document.getElementById("sueldoNeto").value)||0,
+    f931: Number(document.getElementById("f931").value)||0,
+    iibb_determinado: Number(document.getElementById("iibbDeterminado").value)||0,
+    autonomos_pagado: Number(document.getElementById("autonomosPagado").value)||0,
+    otros_gastos: Number(document.getElementById("otrosGastos").value)||0,
+    otros_gastos_detalle: document.getElementById("otrosDetalle").value||"",
+    recibo_nombre_archivo,
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await sb.from("meses").upsert(payload, {onConflict:"token,anio,mes"});
+  if(error){
+    status.textContent = "Error al guardar: " + error.message;
+    status.className = "status err";
+    return;
+  }
+  status.textContent = "Guardado ✓";
+  status.className = "status ok";
+  window._reciboFile = null;
+  await loadAnio();
+  openMonth(anio, mes);
+});
+
+document.getElementById("btnBorrar").addEventListener("click", async () => {
+  if(!activeMonth) return;
+  if(!confirm("¿Borrar todos los datos de este mes?")) return;
+  const [anio, mes] = activeMonth.split("-").map(Number);
+  await sb.from("meses").delete().eq("token", TOKEN).eq("anio", anio).eq("mes", mes);
+  await loadAnio();
+  document.getElementById("formCard").style.display = "none";
+  activeMonth = null;
+});
+
+// ---------- Cálculo estimado ----------
+function calcularImpuesto(monto, anio){
+  const tabla = escala.filter(e => e.anio === anio);
+  if(!tabla.length || monto <= 0) return 0;
+  for(const t of tabla){
+    if(monto >= t.desde && (t.hasta === null || monto < t.hasta)){
+      return t.fijo + (monto - t.desde) * (t.pct/100);
+    }
+  }
+  const ultimo = tabla[tabla.length-1];
+  return ultimo.fijo + (monto - ultimo.desde) * (ultimo.pct/100);
+}
+
+function renderResultado(anio){
+  const filas = Object.values(cargados);
+  const mesesCargados = filas.length;
+  const div = document.getElementById("resultado");
+  if(mesesCargados === 0){
+    div.innerHTML = `<div class="hint">Todavía no hay meses cargados en ${anio}.</div>`;
+    return;
+  }
+  const sum = (k) => filas.reduce((a,r) => a + Number(r[k]||0), 0);
+  const ventas = sum("ventas_gravadas") + sum("ventas_no_gravadas");
+  const compras = sum("compras_gravadas") + sum("compras_no_gravadas");
+  const sueldos = sum("sueldo_neto");
+  const f931 = sum("f931");
+  const iibb = sum("iibb_determinado");
+  const autonomos = sum("autonomos_pagado");
+  const otros = sum("otros_gastos");
+
+  const resultadoBruto = ventas - compras - sueldos - f931 - iibb - autonomos - otros;
+
+  const ded = deducciones[anio] || {};
+  const gni = ded["Ganancia no imponible"] || 0;
+  const dedEsp = ded["Deduccion especial"] || 0;
+  const proporcion = mesesCargados / 12;
+  const deduccionProrrateada = (gni + dedEsp) * proporcion;
+
+  const baseImponible = Math.max(0, resultadoBruto - deduccionProrrateada);
+  const impuesto = calcularImpuesto(baseImponible, anio);
+
+  const fmt = (n) => "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  div.innerHTML = `
+    <div class="result-line"><span>Ventas (período cargado)</span><span>${fmt(ventas)}</span></div>
+    <div class="result-line"><span>Compras</span><span>-${fmt(compras)}</span></div>
+    <div class="result-line"><span>Sueldos netos</span><span>-${fmt(sueldos)}</span></div>
+    <div class="result-line"><span>F.931</span><span>-${fmt(f931)}</span></div>
+    <div class="result-line"><span>IIBB determinado</span><span>-${fmt(iibb)}</span></div>
+    <div class="result-line"><span>Autónomos</span><span>-${fmt(autonomos)}</span></div>
+    <div class="result-line"><span>Otros gastos</span><span>-${fmt(otros)}</span></div>
+    <div class="result-line"><span>Resultado antes de deducciones</span><span>${fmt(resultadoBruto)}</span></div>
+    <div class="result-line"><span>Deducciones (${mesesCargados}/12 meses)</span><span>-${fmt(deduccionProrrateada)}</span></div>
+    <div class="result-line"><span>Base imponible</span><span>${fmt(baseImponible)}</span></div>
+    <div class="result-line total"><span>Impuesto determinado (estimado)</span><span>${fmt(impuesto)}</span></div>
+  `;
+}
+
+init();
+</script>
+</body>
+</html>

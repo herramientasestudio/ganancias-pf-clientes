@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Ganancias PF</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{ --navy:#1B2A4A; --gold:#C9A227; --bg:#F0F3F8; --border:#dbe1ea; }
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); margin:0; padding:16px; color:var(--navy)}
+  .card{background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; max-width:640px; margin:16px auto}
+  h1{font-size:1.1rem}
+  input{width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:1rem; margin-bottom:10px}
+  button{background:var(--navy); color:#fff; border:none; padding:10px 16px; border-radius:8px; cursor:pointer}
+  table{width:100%; border-collapse:collapse; margin-top:16px; font-size:.85rem}
+  td, th{padding:8px 4px; border-bottom:1px solid var(--border); text-align:left; word-break:break-all}
+  .linkBox{font-size:.8rem; background:#f7f7f7; padding:8px; border-radius:6px; margin-top:4px}
+  .copyBtn{font-size:.75rem; padding:4px 8px; margin-left:6px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Estudio Kern — Admin clientes Ganancias PF</h1>
+  <input type="text" id="claveAdmin" placeholder="Clave de administración">
+  <button id="btnEntrar">Entrar</button>
+</div>
+
+<div class="card" id="panel" style="display:none">
+  <h1>Nuevo cliente</h1>
+  <input type="text" id="nombreCliente" placeholder="Nombre del cliente">
+  <button id="btnCrear">Crear link</button>
+  <div id="nuevoLink"></div>
+
+  <h1 style="margin-top:24px">Clientes existentes</h1>
+  <table id="tablaClientes"><thead><tr><th>Nombre</th><th>Link</th></tr></thead><tbody></tbody></table>
+</div>
+
+<script>
+const SUPABASE_URL = "https://jzjthobcmbwszoagcaap.supabase.co";
+const SUPABASE_KEY = "sb_publishable_h8JzOOZqlJzyfyLuDuBEuw_wcD-xjs0";
+// Cambiá esta clave por una propia antes de usar la página.
+const CLAVE_ADMIN = "Estudio.2026";
+
+let sb = null;
+
+document.getElementById("btnEntrar").addEventListener("click", () => {
+  if(document.getElementById("claveAdmin").value !== CLAVE_ADMIN){
+    alert("Clave incorrecta");
+    return;
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  document.getElementById("panel").style.display = "block";
+  cargarClientes();
+});
+
+document.getElementById("btnCrear").addEventListener("click", async () => {
+  const nombre = document.getElementById("nombreCliente").value.trim();
+  if(!nombre) return alert("Poné un nombre");
+  const { data, error } = await sb.from("clientes").insert({nombre}).select().single();
+  if(error) return alert("Error: " + error.message);
+  const link = `${location.origin}${location.pathname.replace("admin.html","")}#c=${data.token}`;
+  document.getElementById("nuevoLink").innerHTML = `
+    <div class="linkBox">${link} <button class="copyBtn" onclick="navigator.clipboard.writeText('${link}')">Copiar</button></div>
+  `;
+  document.getElementById("nombreCliente").value = "";
+  cargarClientes();
+});
+
+async function cargarClientes(){
+  const { data } = await sb.from("clientes").select("*").order("created_at", {ascending:false});
+  const tbody = document.querySelector("#tablaClientes tbody");
+  tbody.innerHTML = "";
+  (data||[]).forEach(c => {
+    const link = `${location.origin}${location.pathname.replace("admin.html","")}#c=${c.token}`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${c.nombre}</td><td>${link} <button class="copyBtn" onclick="navigator.clipboard.writeText('${link}')">Copiar</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+</script>
+</body>
+</html>
