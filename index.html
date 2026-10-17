@@ -128,12 +128,12 @@
       </div>
     </div>
 
-    <div class="section-title">Recibo de sueldo</div>
-    <label class="fileBtn">Subir PDF del recibo
-      <input type="file" id="fileRecibo" accept=".pdf">
+    <div class="section-title">Recibos de sueldo</div>
+    <label class="fileBtn">Subir PDF de recibo(s) — podés elegir varios a la vez
+      <input type="file" id="fileRecibo" accept=".pdf" multiple>
     </label>
     <div class="hint" id="reciboHint"></div>
-    <label>Sueldo neto (revisá o completá)</label>
+    <label>Sueldo neto total (revisá o completá)</label>
     <input type="number" id="sueldoNeto" step="0.01">
 
     <div class="section-title">Otros datos del mes</div>
@@ -143,6 +143,8 @@
     <input type="number" id="iibbDeterminado" step="0.01">
     <label>Autónomos (monto pagado)</label>
     <input type="number" id="autonomosPagado" step="0.01">
+    <label>Sindicatos (monto)</label>
+    <input type="number" id="sindicatos" step="0.01">
     <label>Otros gastos — monto</label>
     <input type="number" id="otrosGastos" step="0.01">
     <label>Otros gastos — detalle</label>
@@ -251,6 +253,7 @@ function openMonth(anio, mes){
   document.getElementById("f931").value = row.f931 || 0;
   document.getElementById("iibbDeterminado").value = row.iibb_determinado || 0;
   document.getElementById("autonomosPagado").value = row.autonomos_pagado || 0;
+  document.getElementById("sindicatos").value = row.sindicatos || 0;
   document.getElementById("otrosGastos").value = row.otros_gastos || 0;
   document.getElementById("otrosDetalle").value = row.otros_gastos_detalle || "";
   document.getElementById("reciboHint").textContent = row.recibo_nombre_archivo ? `Archivo guardado: ${row.recibo_nombre_archivo}` : "";
@@ -271,8 +274,8 @@ function sumColumnas(rows, matchGravado, matchNoGravado){
     const idx = headers.findIndex(pred);
     return idx >= 0 ? origKeys[idx] : null;
   };
-  const kGrav = findKey(h => h.includes("neto grav"));
-  const kNoGrav = findKey(h => h.includes("no grav") || h.includes("exento"));
+  const kGrav = findKey(h => h.includes("gravado total"));
+  const kNoGrav = findKey(h => h.includes("no gravado") || h.includes("exenta"));
   let gravado = 0, noGravado = 0;
   rows.forEach(r => {
     if(kGrav && !isNaN(parseFloat(r[kGrav]))) gravado += parseFloat(r[kGrav]);
@@ -287,7 +290,7 @@ function leerExcel(file, cbGravado, cbNoGravado){
     try{
       const wb = XLSX.read(e.target.result, {type:"binary"});
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, {defval:0});
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:0, range:1});
       const {gravado, noGravado} = sumColumnas(rows);
       cbGravado(gravado);
       cbNoGravado(noGravado);
@@ -340,21 +343,27 @@ function extraerNetos(texto){
 }
 
 document.getElementById("fileRecibo").addEventListener("change", async (e) => {
-  const f = e.target.files[0]; if(!f) return;
-  document.getElementById("reciboHint").textContent = "Leyendo PDF...";
-  try{
-    const texto = await leerPdfTexto(f);
-    const {total, encontrados} = extraerNetos(texto);
-    if(encontrados > 0){
-      document.getElementById("sueldoNeto").value = total.toFixed(2);
-      document.getElementById("reciboHint").textContent = `Detecté ${encontrados} recibo(s), suma $${total.toFixed(2)}. Revisá que esté bien.`;
-    } else {
-      document.getElementById("reciboHint").textContent = "No pude leer el monto automáticamente. Completalo a mano.";
+  const files = Array.from(e.target.files || []); if(!files.length) return;
+  document.getElementById("reciboHint").textContent = "Leyendo PDF(s)...";
+  let totalGeneral = 0, archivosOk = 0, archivosFallidos = 0;
+  for(const f of files){
+    try{
+      const texto = await leerPdfTexto(f);
+      const {total, encontrados} = extraerNetos(texto);
+      if(encontrados > 0){ totalGeneral += total; archivosOk++; }
+      else { archivosFallidos++; }
+    }catch(err){
+      archivosFallidos++;
     }
-  }catch(err){
-    document.getElementById("reciboHint").textContent = "No pude leer el PDF automáticamente. Completalo a mano.";
   }
-  window._reciboFile = f;
+  if(archivosOk > 0){
+    document.getElementById("sueldoNeto").value = totalGeneral.toFixed(2);
+  }
+  let msg = `Leí ${archivosOk} de ${files.length} recibo(s), suma $${totalGeneral.toFixed(2)}.`;
+  if(archivosFallidos > 0) msg += ` ${archivosFallidos} no se pudieron leer solos — revisá y completá a mano si hace falta.`;
+  else msg += " Revisá que esté bien.";
+  document.getElementById("reciboHint").textContent = msg;
+  window._reciboFiles = files;
 });
 
 // ---------- Guardar / Borrar ----------
@@ -367,10 +376,14 @@ document.getElementById("btnGuardar").addEventListener("click", async () => {
 
   let recibo_nombre_archivo = (cargados[activeMonth] && cargados[activeMonth].recibo_nombre_archivo) || "";
 
-  if(window._reciboFile){
-    const path = `${TOKEN}/${anio}-${String(mes).padStart(2,"0")}-${Date.now()}.pdf`;
-    const { error: upErr } = await sb.storage.from("recibos").upload(path, window._reciboFile, {upsert:true});
-    if(!upErr) recibo_nombre_archivo = window._reciboFile.name;
+  if(window._reciboFiles && window._reciboFiles.length){
+    const nombresSubidos = [];
+    for(const f of window._reciboFiles){
+      const path = `${TOKEN}/${anio}-${String(mes).padStart(2,"0")}-${Date.now()}-${f.name}`;
+      const { error: upErr } = await sb.storage.from("recibos").upload(path, f, {upsert:true});
+      if(!upErr) nombresSubidos.push(f.name);
+    }
+    if(nombresSubidos.length) recibo_nombre_archivo = nombresSubidos.join(", ");
   }
 
   const payload = {
@@ -383,6 +396,7 @@ document.getElementById("btnGuardar").addEventListener("click", async () => {
     f931: Number(document.getElementById("f931").value)||0,
     iibb_determinado: Number(document.getElementById("iibbDeterminado").value)||0,
     autonomos_pagado: Number(document.getElementById("autonomosPagado").value)||0,
+    sindicatos: Number(document.getElementById("sindicatos").value)||0,
     otros_gastos: Number(document.getElementById("otrosGastos").value)||0,
     otros_gastos_detalle: document.getElementById("otrosDetalle").value||"",
     recibo_nombre_archivo,
@@ -397,7 +411,7 @@ document.getElementById("btnGuardar").addEventListener("click", async () => {
   }
   status.textContent = "Guardado ✓";
   status.className = "status ok";
-  window._reciboFile = null;
+  window._reciboFiles = null;
   await loadAnio();
   openMonth(anio, mes);
 });
@@ -440,9 +454,10 @@ function renderResultado(anio){
   const f931 = sum("f931");
   const iibb = sum("iibb_determinado");
   const autonomos = sum("autonomos_pagado");
+  const sindicatos = sum("sindicatos");
   const otros = sum("otros_gastos");
 
-  const resultadoBruto = ventas - compras - sueldos - f931 - iibb - autonomos - otros;
+  const resultadoBruto = ventas - compras - sueldos - f931 - iibb - autonomos - sindicatos - otros;
 
   const ded = deducciones[anio] || {};
   const gni = ded["Ganancia no imponible"] || 0;
@@ -462,6 +477,7 @@ function renderResultado(anio){
     <div class="result-line"><span>F.931</span><span>-${fmt(f931)}</span></div>
     <div class="result-line"><span>IIBB determinado</span><span>-${fmt(iibb)}</span></div>
     <div class="result-line"><span>Autónomos</span><span>-${fmt(autonomos)}</span></div>
+    <div class="result-line"><span>Sindicatos</span><span>-${fmt(sindicatos)}</span></div>
     <div class="result-line"><span>Otros gastos</span><span>-${fmt(otros)}</span></div>
     <div class="result-line"><span>Resultado antes de deducciones</span><span>${fmt(resultadoBruto)}</span></div>
     <div class="result-line"><span>Deducciones (${mesesCargados}/12 meses)</span><span>-${fmt(deduccionProrrateada)}</span></div>
