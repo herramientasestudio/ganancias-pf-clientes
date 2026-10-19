@@ -27,11 +27,11 @@
     padding-bottom:60px;
   }
   header{
-    background:var(--navy); color:#fff; padding:18px 16px;
+    background:var(--navy); padding:12px 16px;
     display:flex; align-items:center; justify-content:space-between;
   }
-  header .brand{font-weight:700; font-size:1.15rem; letter-spacing:.3px}
-  header .brand small{display:block; font-weight:400; font-size:.75rem; color:#cfd6e6}
+  header .logo{height:42px; display:block; border-radius:4px}
+  header .clienteBadge{font-size:.8rem; color:var(--navy); background:#fff; border:1px solid var(--border); padding:6px 12px; border-radius:20px; font-weight:600}
   main{max-width:720px; margin:0 auto; padding:16px}
   .card{
     background:var(--card); border:1px solid var(--border); border-radius:12px;
@@ -91,7 +91,15 @@
 <body>
 
 <header>
-  <div class="brand">Estudio Kern<small id="clienteNombre">Ganancias</small></div>
+  <div class="logo">
+    <div class="bar"></div>
+    <div class="text">
+      <span class="label">ESTUDIO</span>
+      <span class="kern">Kern<span class="dot">·</span></span>
+      <span class="sub">CONTADORES PÚBLICOS</span>
+    </div>
+  </div>
+  <div class="clienteBadge" id="clienteNombre">Ganancias</div>
 </header>
 
 <div id="loginGate" style="display:none">
